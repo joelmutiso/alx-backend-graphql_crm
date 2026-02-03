@@ -1,0 +1,16 @@
+# General
+__pycache__/
+*.py[cod]
+*.so
+
+# Environments
+env/
+venv/
+.env  
+
+# Database
+db.sqlite3
+
+# OS metadata
+.DS_Store
+Thumbs.db
