@@ -1,39 +1,31 @@
 import graphene
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField 
-from .models import Customer, Product, Order
-from .filters import CustomerFilter, ProductFilter, OrderFilter
+from crm.models import Customer, Product, Order
+from crm.filters import CustomerFilter, ProductFilter, OrderFilter
 from django.db import transaction
-
-# ==================================
-# 1. Types (Now with Relay & Filters)
-# ==================================
 
 class CustomerType(DjangoObjectType):
     class Meta:
         model = Customer
-        fields = ("id", "name", "email", "phone", "orders", "created_at")
-        # Enable Relay (Pagination) and Filters
+        fields = "__all__"
         interfaces = (graphene.relay.Node, )
         filterset_class = CustomerFilter
 
 class ProductType(DjangoObjectType):
     class Meta:
         model = Product
-        fields = ("id", "name", "price", "stock")
+        fields = "__all__"
         interfaces = (graphene.relay.Node, )
         filterset_class = ProductFilter
 
 class OrderType(DjangoObjectType):
     class Meta:
         model = Order
-        fields = ("id", "customer", "products", "order_date", "total_amount")
+        fields = "__all__"
         interfaces = (graphene.relay.Node, )
         filterset_class = OrderFilter
 
-# ==================================
-# 2. Input Types (Unchanged)
-# ==================================
 class CustomerInput(graphene.InputObjectType):
     name = graphene.String(required=True)
     email = graphene.String(required=True)
@@ -47,14 +39,6 @@ class ProductInput(graphene.InputObjectType):
 class OrderInput(graphene.InputObjectType):
     customerId = graphene.ID(required=True)
     productIds = graphene.List(graphene.ID, required=True)
-
-# ==================================
-# 3. Mutations (Unchanged logic, just ID handling)
-# ==================================
-# NOTE: When using Relay, IDs become Global IDs (e.g., "CustomerType:1"). 
-# For simplicity in this task, we will stick to the previous implementation 
-# but be aware that relay inputs usually require decoding. 
-# Since the prompt Mutations didn't change, we keep the previous logic.
 
 class CreateCustomer(graphene.Mutation):
     class Arguments:
@@ -111,9 +95,6 @@ class CreateOrder(graphene.Mutation):
     order = graphene.Field(OrderType)
 
     def mutate(root, info, input):
-        # NOTE: With Relay, if the client sends global IDs ("CustomerType:1"), 
-        # you might need to decode them using `from_global_id`.
-        # Assuming standard integer IDs for now based on previous task context.
         try:
             customer = Customer.objects.get(pk=input.customerId)
         except:
@@ -129,21 +110,29 @@ class CreateOrder(graphene.Mutation):
             order.save()
         return CreateOrder(order=order)
 
+class UpdateLowStockProducts(graphene.Mutation):
+    success = graphene.Boolean()
+    updated_products = graphene.List(ProductType)
+
+    def mutate(self, info):
+        low_stock_products = Product.objects.filter(stock__lt=10)
+        updated_list = []
+        for product in low_stock_products:
+            product.stock += 10
+            product.save()
+            updated_list.append(product)
+        return UpdateLowStockProducts(success=True, updated_products=updated_list)
+
 class Mutation(graphene.ObjectType):
     create_customer = CreateCustomer.Field()
     bulk_create_customers = BulkCreateCustomers.Field()
     create_product = CreateProduct.Field()
     create_order = CreateOrder.Field()
-
-# ==================================
-# 4. Query (The big update!)
-# ==================================
+    update_low_stock_products = UpdateLowStockProducts.Field()
 
 class Query(graphene.ObjectType):
-    # DjangoFilterConnectionField auto-magically handles the filtering args
     all_customers = DjangoFilterConnectionField(CustomerType)
     all_products = DjangoFilterConnectionField(ProductType)
     all_orders = DjangoFilterConnectionField(OrderType)
 
-    # We don't strictly need resolvers for ConnectionFields, 
-    # Graphene handles them via the FilterSets.
+schema = graphene.Schema(query=Query, mutation=Mutation)
